@@ -3,7 +3,8 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { drains, reports, sources } from "@/data/scenario";
-import { createPlan, metricsFor } from "@/lib/scheduling";
+import { impactAssumptionLabel, estimateImpact } from "@/lib/impact";
+import { createPlan, jobAt, metricsFor } from "@/lib/scheduling";
 import { Plan } from "@/lib/types";
 
 const Scene3D = dynamic(() => import("@/components/Scene3D"), {
@@ -46,10 +47,14 @@ export default function DrainOps() {
   const metrics = useMemo(() => metricsFor(plan, drains, blocked), [plan, blocked]);
   const nextJob = plan.jobs.find((job) => job.finish > minute);
   const completed = plan.jobs.filter((job) => job.finish <= minute);
-  const completedSeverity = completed.reduce((total, job) => total + (drains.find((drain) => drain.id === job.drainId)?.severity ?? 0), 0);
-  const baselineImpact = Math.round(132 + rain * 14 + blocked.size * 10);
-  const currentImpact = Math.max(18, baselineImpact - completedSeverity * 5 - completed.filter((job) => job.priority === "high").length * 9);
+  const impact = useMemo(() => estimateImpact(plan, minute, blocked), [plan, minute, blocked]);
   const nextDrain = nextJob ? drains.find((drain) => drain.id === nextJob.drainId) : undefined;
+  const crewTelemetry = ["crew-1", "crew-2"].slice(0, crewCount).map((crewId) => {
+    const active = jobAt(plan, crewId, minute);
+    const upcoming = plan.jobs.find((job) => job.crewId === crewId && job.finish > minute);
+    const target = active ?? upcoming;
+    return { label: crewId === "crew-1" ? "CREW 01" : "CREW 02", value: target ? `${active ? "servicing" : "en route"} ${target.drainId}` : "available" };
+  });
 
   const reset = () => {
     setPlan(createPlan("ai", drains, new Set(), 90, crewCount));
@@ -78,7 +83,7 @@ export default function DrainOps() {
 
   const comparisons = ["nearest", "risk", "ai"].map((policy) => {
     const result = createPlan(policy as "nearest" | "risk" | "ai", drains, blocked, 90, crewCount);
-    return { plan: result, metrics: metricsFor(result, drains, blocked) };
+    return { plan: result, metrics: metricsFor(result, drains, blocked), impact: estimateImpact(result, 90, blocked) };
   });
 
   return <main className="app-shell">
@@ -93,8 +98,9 @@ export default function DrainOps() {
         <Scene3D plan={plan} minute={minute} selectedId={selectedId} onSelect={setSelectedId} blocked={blocked} rainIntensity={rain} cameraKey={cameraKey} />
         <div className="scene-vignette" />
         <div className="map-hud top-left"><span className="eyebrow">WEATHER WINDOW</span><strong>Heavy rain in {Math.max(0, 90 - minute)} min</strong><span>Rain intensity: {rain === 1 ? "moderate" : rain === 2 ? "heavy" : "severe"}</span></div>
-        <div className="impact-hud"><span className="eyebrow">SIMULATED STREET PONDING</span><div><strong>{baselineImpact}</strong><i>→</i><strong className="impact-after">{currentImpact}</strong></div><small>water-cell index · effect applies only when a clearance completes</small><span className="impact-bar"><b style={{ width: `${Math.min(100, (currentImpact / baselineImpact) * 100)}%` }} /></span></div>
+        <div className="impact-hud"><span className="eyebrow">SIMULATED PONDING EXPOSURE</span><div><strong>{impact.baselinePondingCellMinutes}</strong><i>→</i><strong className="impact-after">{impact.projectedPondingCellMinutes}</strong></div><small>cell-minutes · effect applies only when a clearance completes</small><span className="impact-bar"><b style={{ width: `${Math.min(100, (impact.projectedPondingCellMinutes / impact.baselinePondingCellMinutes) * 100)}%` }} /></span><div className="impact-detail"><span>Flow capacity <b>{impact.trafficFlowPercent}%</b></span><span>Cost proxy avoided <b>£{impact.avoidedDisruptionCostProxy}</b></span></div></div>
         <div className="decision-hud"><span className="eyebrow">OPTIMISER&apos;S NEXT MOVE</span><strong>{nextDrain ? `#${nextJob?.priority === "high" ? "1" : "2"} ${nextDrain.id} · ${nextDrain.name}` : "All scheduled work complete"}</strong><small>{nextJob ? `${nextJob.action.toUpperCase()} · Crew ${nextJob.crewId === "crew-1" ? "01" : "02"} · ${nextJob.travel} min travel · ${nextJob.finish} min finish` : "Rain-impact replay is complete."}</small></div>
+        <div className="telemetry-hud"><span className="eyebrow">SIMULATED OPERATIONAL TELEMETRY</span><div className="telemetry-grid"><span><i>RAIN</i><b>{rain === 1 ? "MOD" : rain === 2 ? "HEAVY" : "SEVERE"}</b></span><span><i>PONDING</i><b>{impact.projectedPondingCellMinutes}</b></span>{crewTelemetry.map((crew) => <span key={crew.label}><i>{crew.label}</i><b>{crew.value}</b></span>)}</div><small>Demonstration scenario telemetry · not live field sensors</small></div>
         <div className="map-hud bottom-left"><span className="legend"><b className="dot urgent" /> urgent</span><span className="legend"><b className="dot uncertain" /> uncertain</span><span className="legend"><b className="dot complete" /> cleared</span></div>
         <button className="camera-button" onClick={() => setCameraKey((value) => value + 1)}>◎ Reset camera</button>
         <div className="attribution">Central Preston OSM basemap · © OpenStreetMap contributors · scenario drains are illustrative</div>
@@ -122,7 +128,7 @@ export default function DrainOps() {
     </section>
 
     <section className="operator-bar">
-      <div className="notice"><span className="notice-symbol">✦</span>{isPlanning ? "AI request in progress…" : notice}<span className="impact-summary">Baseline {baselineImpact} → current {currentImpact} simulated ponding index</span></div>
+      <div className="notice"><span className="notice-symbol">✦</span>{isPlanning ? "AI request in progress…" : notice}<span className="impact-summary">Ponding {impact.baselinePondingCellMinutes} → {impact.projectedPondingCellMinutes} cell-min · traffic capacity {impact.trafficFlowPercent}% · £{impact.avoidedDisruptionCostProxy} scenario disruption proxy avoided</span></div>
       <div className="operator-controls">
         <label className="compact-control">CREWS <select value={crewCount} onChange={(event) => { const count = Number(event.target.value); setCrewCount(count); setPlan(createPlan(plan.id, drains, blocked, 90, count)); }}><option value={1}>1</option><option value={2}>2</option></select></label>
         <label className="compact-control">RAIN <input aria-label="Rain intensity" type="range" min="1" max="3" value={rain} onChange={(event) => setRain(Number(event.target.value))} /></label>
@@ -135,7 +141,7 @@ export default function DrainOps() {
       </div>
     </section>
 
-    {compareOpen && <section className="drawer comparison"><div className="drawer-heading"><div><span className="eyebrow">CONSISTENT SCENARIO REPLAY</span><h2>Plan comparison</h2></div><button onClick={() => setCompareOpen(false)}>×</button></div><p>Same rain, assets, observations, crews and deadline. Values come from the illustrative deterministic simulation.</p><div className="comparison-grid"><div className="compare-head">Policy</div><div className="compare-head">Jobs before rain</div><div className="compare-head">Priority jobs</div><div className="compare-head">Travel</div><div className="compare-head">Failed visits</div><div className="compare-head">Ponding index</div>{comparisons.flatMap(({ plan: item, metrics: value }) => [<div key={`${item.id}-a`}><b>{item.label}</b><small>{item.mode}</small></div>, <div key={`${item.id}-b`}>{value.completed}</div>, <div key={`${item.id}-c`}>{value.priorityCompleted}</div>, <div key={`${item.id}-d`}>{value.travel} min</div>, <div key={`${item.id}-e`}>{value.failedVisits}</div>, <div key={`${item.id}-f`}><span className="ponding">{value.ponding}</span></div>])}</div><p className="drawer-note">The model does not claim real flood prevention, financial savings or live drainage telemetry.</p></section>}
+    {compareOpen && <section className="drawer comparison"><div className="drawer-heading"><div><span className="eyebrow">CONSISTENT SCENARIO REPLAY</span><h2>Plan comparison</h2></div><button onClick={() => setCompareOpen(false)}>×</button></div><p>Same rain, assets, observations, crews and deadline. The optimiser earns its result only through completed clearances before rainfall.</p><div className="comparison-grid"><div className="compare-head">Policy</div><div className="compare-head">Jobs</div><div className="compare-head">Priority</div><div className="compare-head">Travel</div><div className="compare-head">Ponding exposure</div><div className="compare-head">Traffic flow</div><div className="compare-head">Disruption proxy</div>{comparisons.flatMap(({ plan: item, metrics: value, impact: outcome }) => [<div key={`${item.id}-a`}><b>{item.label}</b><small>{item.mode}</small></div>, <div key={`${item.id}-b`}>{value.completed}</div>, <div key={`${item.id}-c`}>{value.priorityCompleted}</div>, <div key={`${item.id}-d`}>{value.travel} min</div>, <div key={`${item.id}-e`}><span className="ponding">{outcome.projectedPondingCellMinutes}</span></div>, <div key={`${item.id}-f`}>{outcome.trafficFlowPercent}%</div>, <div key={`${item.id}-g`}>£{outcome.disruptionCostProxy}</div>])}</div><p className="drawer-note">{impactAssumptionLabel}</p></section>}
     {sourceOpen && <section className="drawer sources"><div className="drawer-heading"><div><span className="eyebrow">WHY LANCASHIRE?</span><h2>Public context</h2></div><button onClick={() => setSourceOpen(false)}>×</button></div><p>These sourced facts are separate from the illustrative Preston assets and weather scenario.</p>{sources.map((source) => <a key={source.href} href={source.href} target="_blank" rel="noreferrer noopener"><b>{source.title}</b><span>{source.label} ↗</span></a>)}</section>}
     <div className="mobile-fallback">Interactive 3D district unavailable? The decision panel, scheduler and comparison controls remain usable.</div>
   </main>;

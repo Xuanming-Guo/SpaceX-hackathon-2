@@ -25,9 +25,16 @@ npm run build
 - Three deterministic policies: nearest-first, fixed risk priority and a recorded evidence-led AI example.
 - Feasibility-aware scheduling: two crews, travel/service time, 90-minute deadline, constraints and deferred work.
 - Parked-vehicle event at G-05, followed by a visibly changed, feasible replan.
-- Comparison metrics from the same illustrative scenario replay.
+- Scenario telemetry for rain, crew state, ponding exposure and route/traffic capacity.
+- Comparison metrics from the same illustrative scenario replay, including ponding exposure, estimated traffic flow and a transparent disruption-cost proxy.
 
 The `Generate AI plan` button calls a small server endpoint, but when live credentials are not configured it deliberately returns an **honestly labelled recorded example**. No client-side secret or paid API call is required for the core demo.
+
+## Impact model
+
+DrainOps sells a measurable operational outcome, not an unverified prediction. The replay starts with a baseline ponding exposure, then reduces it only when a feasible surface-clearance job is completed before rainfall. From that same state it derives a scenario traffic-flow percentage, delayed vehicle-minutes and a disruption-cost proxy.
+
+Those last two figures use visible fixed assumptions—160 baseline vehicle-minutes, £1.10 per delayed vehicle-minute, and a critical-route disruption factor—so they are useful for comparing policies but are **not** claims of real traffic throughput, properties saved, avoided flooding, council savings or financial benefit. The comparison drawer repeats the assumptions alongside every result.
 
 ## 90-second judge flow
 
