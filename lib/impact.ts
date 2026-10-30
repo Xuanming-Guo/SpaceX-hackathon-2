@@ -9,6 +9,7 @@ export type ImpactEstimate = {
   trafficFlowPercent: number;
   delayedVehicleMinutes: number;
   avoidedVehicleMinutes: number;
+  baselineDisruptionCostProxy: number;
   disruptionCostProxy: number;
   avoidedDisruptionCostProxy: number;
   completedClearances: number;
@@ -42,7 +43,8 @@ export function estimateImpact(plan: Plan, asOfMinute = 90, blocked = new Set<st
   const ratio = projectedPondingCellMinutes / baselinePondingCellMinutes;
   const delayedVehicleMinutes = Math.round(vehicleDelayAtBaseline * ratio);
   const baselineCost = Math.round(vehicleDelayAtBaseline * vehicleMinuteCostProxy + criticalRoutes.length * criticalRouteDisruptionProxy);
-  const disruptionCostProxy = Math.round(delayedVehicleMinutes * vehicleMinuteCostProxy + (criticalRoutes.length - criticalRoutesProtected) * criticalRouteDisruptionProxy + plan.deferred.length * 10);
+  const deferredPenalty = asOfMinute >= 90 ? plan.deferred.length * 10 : 0;
+  const disruptionCostProxy = Math.round(delayedVehicleMinutes * vehicleMinuteCostProxy + (criticalRoutes.length - criticalRoutesProtected) * criticalRouteDisruptionProxy + deferredPenalty);
   return {
     baselinePondingCellMinutes,
     projectedPondingCellMinutes,
@@ -51,6 +53,7 @@ export function estimateImpact(plan: Plan, asOfMinute = 90, blocked = new Set<st
     trafficFlowPercent: Math.round(100 - ratio * 45),
     delayedVehicleMinutes,
     avoidedVehicleMinutes: vehicleDelayAtBaseline - delayedVehicleMinutes,
+    baselineDisruptionCostProxy: baselineCost,
     disruptionCostProxy,
     avoidedDisruptionCostProxy: Math.max(0, baselineCost - disruptionCostProxy),
     completedClearances: completedClearances.length,

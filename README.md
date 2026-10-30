@@ -27,6 +27,7 @@ npm run build
 - Parked-vehicle event at G-05, followed by a visibly changed, feasible replan.
 - Scenario telemetry for rain, crew state, ponding exposure and route/traffic capacity.
 - Comparison metrics from the same illustrative scenario replay, including ponding exposure, estimated traffic flow and a transparent disruption-cost proxy.
+- Smooth real-time replay: the default 1× setting runs the 90-minute scenario in roughly two minutes, with optional follow-camera mode for either crew.
 
 The `Generate AI plan` button calls a small server endpoint, but when live credentials are not configured it deliberately returns an **honestly labelled recorded example**. No client-side secret or paid API call is required for the core demo.
 
@@ -42,6 +43,7 @@ Those last two figures use visible fixed assumptions—160 baseline vehicle-minu
 2. Select **G-01 Fishergate crossing**. Its report/photo evidence shows a visible leaf obstruction on an important bus route.
 3. Click **Generate AI plan**. Explain that the recorded evidence-led recommendation is separately checked for crew travel, service duration and deadline.
 4. Press play and follow the cyan/green vehicles; cleared markers turn green and their ponding shrinks.
+   Use **FOLLOW → Crew 01/02** to track a vehicle; the on-screen impact cards show traffic throughput, delay, route access and disruption proxy before and after each completed clearance.
 5. Click **Introduce obstruction**. The parked van appears at G-05 and the evidence panel changes to access blocked.
 6. Click **Replan from observation**. The inaccessible job is deferred and another feasible job enters the plan.
 7. Open **Compare plans**. All three policies receive the same scenario; DrainOps reports the result instead of claiming the AI always wins.

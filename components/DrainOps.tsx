@@ -15,7 +15,8 @@ const Scene3D = dynamic(() => import("@/components/Scene3D"), {
 const names = Object.fromEntries(drains.map((drain) => [drain.id, drain.name]));
 
 function fmtMinute(minute: number) {
-  return `${String(9 + Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+  const wholeMinute = Math.floor(minute);
+  return `${String(9 + Math.floor(wholeMinute / 60)).padStart(2, "0")}:${String(wholeMinute % 60).padStart(2, "0")}`;
 }
 
 export default function DrainOps() {
@@ -23,23 +24,33 @@ export default function DrainOps() {
   const [selectedId, setSelectedId] = useState("G-01");
   const [minute, setMinute] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(2);
+  const [speed, setSpeed] = useState(1);
   const [rain, setRain] = useState(2);
   const [crewCount, setCrewCount] = useState(2);
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const [compareOpen, setCompareOpen] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [cameraKey, setCameraKey] = useState(0);
+  const [followCrewId, setFollowCrewId] = useState<string | null>(null);
   const [isPlanning, setIsPlanning] = useState(false);
   const [notice, setNotice] = useState("Scenario loaded: 20 demonstration drains, 2 crews, rainfall in 90 minutes.");
 
   useEffect(() => {
     if (!playing) return;
-    const timer = window.setInterval(() => setMinute((value) => {
-      if (value >= 90) { setPlaying(false); return 90; }
-      return Math.min(90, value + speed);
-    }), 420);
-    return () => window.clearInterval(timer);
+    let frame = 0;
+    let previous = performance.now();
+    const tick = (now: number) => {
+      const elapsedSeconds = Math.min(0.1, (now - previous) / 1000);
+      previous = now;
+      setMinute((value) => {
+        if (value >= 90) { setPlaying(false); return 90; }
+        // At 1×, the 90-minute operational window replays in about two real minutes.
+        return Math.min(90, value + elapsedSeconds * 0.75 * speed);
+      });
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
   }, [playing, speed]);
 
   const selected = drains.find((drain) => drain.id === selectedId) ?? drains[0];
@@ -48,6 +59,7 @@ export default function DrainOps() {
   const nextJob = plan.jobs.find((job) => job.finish > minute);
   const completed = plan.jobs.filter((job) => job.finish <= minute);
   const impact = useMemo(() => estimateImpact(plan, minute, blocked), [plan, minute, blocked]);
+  const baselineOutcome = useMemo(() => estimateImpact(plan, 0, blocked), [plan, blocked]);
   const nextDrain = nextJob ? drains.find((drain) => drain.id === nextJob.drainId) : undefined;
   const crewTelemetry = ["crew-1", "crew-2"].slice(0, crewCount).map((crewId) => {
     const active = jobAt(plan, crewId, minute);
@@ -95,7 +107,7 @@ export default function DrainOps() {
 
     <section className="workspace">
       <section className="scene-panel">
-        <Scene3D plan={plan} minute={minute} selectedId={selectedId} onSelect={setSelectedId} blocked={blocked} rainIntensity={rain} cameraKey={cameraKey} />
+        <Scene3D plan={plan} minute={minute} selectedId={selectedId} onSelect={setSelectedId} blocked={blocked} rainIntensity={rain} cameraKey={cameraKey} followCrewId={followCrewId} />
         <div className="scene-vignette" />
         <div className="map-hud top-left"><span className="eyebrow">WEATHER WINDOW</span><strong>Heavy rain in {Math.max(0, 90 - minute)} min</strong><span>Rain intensity: {rain === 1 ? "moderate" : rain === 2 ? "heavy" : "severe"}</span></div>
         <div className="impact-hud"><span className="eyebrow">SIMULATED PONDING EXPOSURE</span><div><strong>{impact.baselinePondingCellMinutes}</strong><i>→</i><strong className="impact-after">{impact.projectedPondingCellMinutes}</strong></div><small>cell-minutes · effect applies only when a clearance completes</small><span className="impact-bar"><b style={{ width: `${Math.min(100, (impact.projectedPondingCellMinutes / impact.baselinePondingCellMinutes) * 100)}%` }} /></span><div className="impact-detail"><span>Flow capacity <b>{impact.trafficFlowPercent}%</b></span><span>Cost proxy avoided <b>£{impact.avoidedDisruptionCostProxy}</b></span></div></div>
@@ -127,11 +139,19 @@ export default function DrainOps() {
       <div className="play-controls"><button className="icon-button" onClick={() => setMinute(0)} title="Return to start">↶</button><button className="play-button" onClick={() => setPlaying((value) => !value)}>{playing ? "Ⅱ Pause" : "▶ Play"}</button><label className="speed"><span>{speed}×</span><input aria-label="Simulation speed" type="range" min="1" max="5" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /></label></div>
     </section>
 
+    <section className="outcome-cards" aria-label="Scenario impact before and after">
+      <article><span className="eyebrow">TRAFFIC THROUGHPUT</span><div><b>{baselineOutcome.trafficFlowPercent}%</b><i>→</i><strong>{impact.trafficFlowPercent}%</strong></div><p>Scenario road-flow capacity</p></article>
+      <article><span className="eyebrow">VEHICLE DELAY</span><div><b>{baselineOutcome.delayedVehicleMinutes}</b><i>→</i><strong>{impact.delayedVehicleMinutes}</strong></div><p>Illustrative vehicle-minutes</p></article>
+      <article><span className="eyebrow">CRITICAL ROUTES KEPT OPEN</span><div><b>0/{impact.totalCriticalRoutes}</b><i>→</i><strong>{impact.criticalRoutesProtected}/{impact.totalCriticalRoutes}</strong></div><p>Completed clearances before rain</p></article>
+      <article><span className="eyebrow">DISRUPTION COST PROXY</span><div><b>£{baselineOutcome.disruptionCostProxy}</b><i>→</i><strong>£{impact.disruptionCostProxy}</strong></div><p>Scenario-only operational estimate</p></article>
+    </section>
+
     <section className="operator-bar">
       <div className="notice"><span className="notice-symbol">✦</span>{isPlanning ? "AI request in progress…" : notice}<span className="impact-summary">Ponding {impact.baselinePondingCellMinutes} → {impact.projectedPondingCellMinutes} cell-min · traffic capacity {impact.trafficFlowPercent}% · £{impact.avoidedDisruptionCostProxy} scenario disruption proxy avoided</span></div>
       <div className="operator-controls">
         <label className="compact-control">CREWS <select value={crewCount} onChange={(event) => { const count = Number(event.target.value); setCrewCount(count); setPlan(createPlan(plan.id, drains, blocked, 90, count)); }}><option value={1}>1</option><option value={2}>2</option></select></label>
         <label className="compact-control">RAIN <input aria-label="Rain intensity" type="range" min="1" max="3" value={rain} onChange={(event) => setRain(Number(event.target.value))} /></label>
+        <label className="compact-control follow-control">FOLLOW <select aria-label="Follow crew" value={followCrewId ?? "overview"} onChange={(event) => setFollowCrewId(event.target.value === "overview" ? null : event.target.value)}><option value="overview">Overview</option><option value="crew-1">Crew 01</option><option value="crew-2" disabled={crewCount < 2}>Crew 02</option></select></label>
         <button className="secondary" onClick={() => { setMinute(0); setPlaying(true); setNotice("Impact replay running: ponding drops only as crews complete applicable clearances."); }}>▶ Run impact replay</button>
         <button className="secondary" onClick={() => setCompareOpen((value) => !value)}>▥ Compare plans</button>
         <button className="secondary" onClick={() => setSourceOpen((value) => !value)}>⌁ Sources</button>
