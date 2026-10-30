@@ -57,10 +57,15 @@ No value uses a `NEXT_PUBLIC_` prefix. Cursor, Grok Bot and Vercel CLI credentia
 
 ## Deploy to Vercel
 
-1. Create a Git repository from this folder and import it in Vercel (or run `vercel` while authenticated).
-2. Vercel detects Next.js automatically; use `npm run build`.
-3. Add only required environment variables in **Project → Settings → Environment Variables**. Keep `LIVE_AI_ENABLED=false` unless a server-side adapter and Redis protections have been reviewed.
-4. Redeploy after changing variables, then set `APP_ORIGINS` to include the exact Vercel URL.
+The repository includes `vercel.json` with the Next.js framework, reproducible `npm ci` installation and `npm run build`. It deliberately does not override the output directory, routing, or add legacy `builds` rules—Vercel handles those for Next.js App Router projects.
+
+1. Commit and push this directory to a new GitHub repository, including `package-lock.json`, `vercel.json` and `.nvmrc`.
+2. In [Vercel](https://vercel.com/new), select **Import Git Repository**, choose that GitHub repository, and leave the root directory as `.`.
+3. Vercel should show the **Next.js** framework preset. The deployment uses `npm ci` and `npm run build` from `vercel.json`; click **Deploy**.
+4. The demonstration deploys with no environment variables because the simulator and recorded plan are bundled. For live services, add only the required values in **Project → Settings → Environment Variables**, keep `LIVE_AI_ENABLED=false` until the live adapter/Redis guards are implemented, and redeploy.
+5. Once deployed, set `APP_ORIGINS` to the exact `https://…vercel.app` URL before any live paid service is enabled.
+
+Vercel currently supports the Node 22 runtime selected in `.nvmrc`; `package.json` permits supported Node 20–24 versions locally.
 
 No deployment URL is included because no Vercel account/session was provided.
 
